@@ -3,7 +3,7 @@ import { buildVectorSpec, fetchCatalog, fetchCollection, isVectorCollection, vec
 
 const BASE = "https://geoservice.dhis2.org/nepal";
 
-// Trimmed from the Nepal demo's /stac/nepal_districts/collection.json.
+// Trimmed from the Nepal demo's /collections/nepal_districts.
 const districts = {
   id: "nepal_districts",
   title: "Districts (Overture Maps)",
@@ -90,45 +90,27 @@ describe("buildVectorSpec", () => {
 describe("fetchCatalog", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("marks the collections /features lists as vector", async () => {
-    const responses: Record<string, unknown> = {
-      [`${BASE}/stac/catalog.json`]: {
-        links: [
-          { rel: "self", href: `${BASE}/stac/catalog.json` },
-          { rel: "child", href: `${BASE}/stac/chirps3_precipitation_monthly/collection.json`, title: "CHIRPS3" },
-          { rel: "child", href: `${BASE}/stac/nepal_districts/collection.json`, title: "Districts" },
-        ],
-      },
-      [`${BASE}/features`]: { kind: "FeatureCollectionList", items: [{ id: "nepal_districts" }] },
+  it("lists openEO's collections, a feature collection as vector", async () => {
+    const listing = {
+      collections: [
+        { id: "chirps3_precipitation_monthly", title: "CHIRPS3", assets: { zarr: { href: `${BASE}/zarr/chirps3` } } },
+        { id: "nepal_districts", title: "Districts", assets: { tiles: { href: "t" }, style: { href: "s" } } },
+      ],
     };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => ({ ok: url in responses, status: 200, json: async () => responses[url] })),
-    );
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => listing }));
+    vi.stubGlobal("fetch", fetchMock);
     const catalog = await fetchCatalog(`${BASE}/`);
-    expect(catalog.map((c) => [c.id, c.kind])).toEqual([
-      ["chirps3_precipitation_monthly", "raster"],
-      ["nepal_districts", "vector"],
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/collections`);
+    expect(catalog.map((c) => [c.id, c.kind, c.href])).toEqual([
+      ["chirps3_precipitation_monthly", "raster", `${BASE}/collections/chirps3_precipitation_monthly`],
+      ["nepal_districts", "vector", `${BASE}/collections/nepal_districts`],
     ]);
   });
 
-  it("lists everything as raster when the instance has no /features route", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) =>
-        url.endsWith("/stac/catalog.json")
-          ? { ok: true, status: 200, json: async () => ({ links: [{ rel: "child", href: `${BASE}/stac/a/collection.json` }] }) }
-          : { ok: false, status: 404, json: async () => ({}) },
-      ),
-    );
-    const catalog = await fetchCatalog(BASE);
-    expect(catalog).toEqual([{ id: "a", title: "a", href: `${BASE}/stac/a/collection.json`, kind: "raster" }]);
-  });
-
-  it("fetches a collection from its collection.json", async () => {
+  it("fetches a collection from openEO's /collections", async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ id: "a" }) }));
     vi.stubGlobal("fetch", fetchMock);
     await fetchCollection(`${BASE}/`, "a");
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/stac/a/collection.json`);
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/collections/a`);
   });
 });
