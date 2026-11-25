@@ -208,48 +208,23 @@ export async function fetchInstanceExtent(ocsUrl: string): Promise<InstanceExten
   }
 }
 
-/** Ids of the instance's feature collections, from `<ocsUrl>/features`. Empty when the
- * instance predates feature collections or the request fails. */
-export async function fetchFeatureCollectionIds(ocsUrl: string): Promise<Set<string>> {
-  try {
-    const res = await fetch(`${stripTrailingSlashes(ocsUrl)}/features`);
-    if (!res.ok) return new Set();
-    const data = (await res.json()) as StacJson;
-    const items: StacJson[] = Array.isArray(data.items) ? data.items : [];
-    return new Set(items.map((i) => i.id).filter((id): id is string => typeof id === "string" && id.length > 0));
-  } catch {
-    return new Set();
-  }
-}
-
-/** The collection id in a child link: `<ocsUrl>/stac/<id>/collection.json`. */
-function collectionIdFromHref(href: string): string {
-  const segments = stripTrailingSlashes(href).split("/");
-  if (segments[segments.length - 1] === "collection.json") segments.pop();
-  return decodeURIComponent(segments.pop() ?? "");
-}
-
-/** Fetch a catalog's published collections from `<ocsUrl>/stac/catalog.json`. The STAC catalog
- * lists rasters and feature collections alike as `child` links; `/features` says which are
- * vector, so the panel can offer them separately without fetching every collection. */
+/** Fetch an instance's published collections from openEO's `<ocsUrl>/collections`, rasters
+ * and feature collections alike. Its collections keep the dataset id as their id and their
+ * assets absolute, where the STAC catalog nests them by kind with relative links. */
 export async function fetchCatalog(ocsUrl: string): Promise<OcsCollectionSummary[]> {
   const base = stripTrailingSlashes(ocsUrl);
-  const [res, featureIds] = await Promise.all([fetch(`${base}/stac/catalog.json`), fetchFeatureCollectionIds(base)]);
-  if (!res.ok) throw new Error(`STAC catalog fetch failed (HTTP ${res.status})`);
-  const cat = (await res.json()) as StacJson;
-  const links: StacJson[] = Array.isArray(cat.links) ? cat.links : [];
-  return links
-    .filter((l) => l.rel === "child")
-    .map((l): OcsCollectionSummary => {
-      const id = collectionIdFromHref(String(l.href));
-      return {
-        id,
-        title: typeof l.title === "string" && l.title ? l.title : id,
-        href: String(l.href),
-        kind: featureIds.has(id) ? "vector" : "raster",
-      };
-    })
-    .filter((c) => c.id.length > 0);
+  const res = await fetch(`${base}/collections`);
+  if (!res.ok) throw new Error(`Collections fetch failed (HTTP ${res.status})`);
+  const listing = (await res.json()) as StacJson;
+  const collections: StacJson[] = Array.isArray(listing.collections) ? listing.collections : [];
+  return collections
+    .filter((c) => typeof c.id === "string" && c.id.length > 0)
+    .map((c): OcsCollectionSummary => ({
+      id: c.id,
+      title: typeof c.title === "string" && c.title ? c.title : c.id,
+      href: `${base}/collections/${encodeURIComponent(c.id)}`,
+      kind: isVectorCollection(c) ? "vector" : "raster",
+    }));
 }
 
 /** A feature collection has no Zarr asset and declares the STAC table extension or a
@@ -330,10 +305,10 @@ export function buildVectorSpec(collection: StacJson, style: StacJson | null = n
   };
 }
 
-/** Fetch a single collection document from `<ocsUrl>/stac/<id>/collection.json`. */
+/** Fetch a single collection document from openEO's `<ocsUrl>/collections/<id>`. */
 export async function fetchCollection(ocsUrl: string, datasetId: string): Promise<StacJson> {
   const base = stripTrailingSlashes(ocsUrl);
-  const res = await fetch(`${base}/stac/${encodeURIComponent(datasetId)}/collection.json`);
+  const res = await fetch(`${base}/collections/${encodeURIComponent(datasetId)}`);
   if (!res.ok) throw new Error(`Collection '${datasetId}' fetch failed (HTTP ${res.status})`);
   return (await res.json()) as StacJson;
 }

@@ -616,7 +616,7 @@ async function connect(ocsUrl: string): Promise<void> {
     const parts = [`${rasters} datasets`, ...(vectors ? [`${vectors} boundary layers`] : [])];
     setStatus(collections.length ? `${where}${parts.join(", ")}` : `${where}no published datasets`);
   } catch (err) {
-    setStatus(`Could not reach ${state.ocsUrl}/stac/catalog.json: ${(err as Error).message}`, true);
+    setStatus(`Could not reach ${state.ocsUrl}/collections: ${(err as Error).message}`, true);
   }
 }
 
